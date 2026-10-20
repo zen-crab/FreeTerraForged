@@ -82,6 +82,15 @@ public class Cache<V extends ExpiringEntry> implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Returns whether this cache has been closed. Closed caches reject further
+	 * compute/get operations; callers can use this to degrade gracefully instead
+	 * of relying on {@link #requireOpen()} throwing.
+	 */
+	public boolean isClosed() {
+		return this.closed.get();
+	}
+
 	public V computeIfAbsent(long key, LongFunction<V> func) {
 		this.lifecycle.readLock().lock();
 		try {

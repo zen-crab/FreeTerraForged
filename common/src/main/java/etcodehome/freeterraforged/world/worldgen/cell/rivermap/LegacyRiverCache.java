@@ -10,6 +10,13 @@ public class LegacyRiverCache extends RiverCache {
     
     @Override
     public Rivermap getRivers(int x, int z) {
-        return this.cache.computeIfAbsent(NoiseUtil.seed(x, z), id -> this.generator.generateRivers(x, z, id));
+        long id = NoiseUtil.seed(x, z);
+        Rivermap rivers = this.cache.computeIfAbsentIfOpen(id, key -> this.generator.generateRivers(x, z, key));
+        if (rivers != null) {
+            return rivers;
+        }
+        // The cache is closed (or raced with closure) during worldgen teardown: generate
+        // without caching rather than throwing "Cache is closed" into active samplers.
+        return this.generator.generateRivers(x, z, id);
     }
 }

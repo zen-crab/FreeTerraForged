@@ -46,6 +46,14 @@ public class TileCache implements AutoCloseable {
 		return this.generator;
 	}
 
+	/**
+	 * Returns whether this cache has been closed. Once closed, {@link #acquire} will
+	 * fail; callers can use this to degrade to uncached sampling instead.
+	 */
+	public boolean isClosed() {
+		return this.closed.get();
+	}
+
 	@Nullable
 	public Lease acquireIfPresent(int tileX, int tileZ) {
 		long packedTilePos = PosUtil.pack(tileX, tileZ);

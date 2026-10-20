@@ -45,7 +45,7 @@ public class WorldLookup {
 	}
 
 	private boolean computeAccurate(Cell cell, int x, int z) {
-		if (this.cache == null) {
+		if (this.cache == null || this.cache.isClosed()) {
 			return false;
 		}
 		int rx = this.cache.chunkToTile(x >> 4);
@@ -55,6 +55,11 @@ public class WorldLookup {
 			if (c != null) {
 				cell.copyFrom(c);
 			}
+		} catch (IllegalStateException closure) {
+			// The cache closed (or its producer was cancelled — CancellationException is an
+			// IllegalStateException) mid-flight during a worldgen teardown race: degrade to
+			// cached/uncached sampling instead of failing the query.
+			return false;
 		}
 		return cell.terrain != null;
 	}

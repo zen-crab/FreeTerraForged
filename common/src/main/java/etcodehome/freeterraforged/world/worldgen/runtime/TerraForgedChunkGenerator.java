@@ -64,7 +64,10 @@ public final class TerraForgedChunkGenerator extends NoiseBasedChunkGenerator
 			new AtomicReference<>(Map.of());
 	private WorldgenProviderCatalog providerCatalog;
 	private volatile WorldgenRuntimeBinding runtime;
-	private FTFRandomState randomState;
+	// Volatile: written on the server thread during binding/close, read unsynchronized from
+	// worldgen worker threads (getGeneratorContext) — workers must observe closure promptly
+	// instead of routing queries into a torn-down GeneratorContext indefinitely.
+	private volatile FTFRandomState randomState;
 	private final ThreadLocal<BiomeDecorationPlan> activeBiomeDecoration = new ThreadLocal<>();
 	private final ThreadLocal<WorldgenPlans.Structures> activeStructures = new ThreadLocal<>();
 	private static final ThreadLocal<Cell> SCRATCH_CELL = ThreadLocal.withInitial(Cell::new);
@@ -369,13 +372,17 @@ public final class TerraForgedChunkGenerator extends NoiseBasedChunkGenerator
 		Cell cell = SCRATCH_CELL.get();
 
 		try {
-			// Attempt standard accurate sampling. If a cache closure race condition
-			// occurs anywhere in this call stack, catch it cleanly instead of crashing.
+			// Attempt standard accurate sampling. Closure races are handled inside
+			// WorldLookup/TileCache/RiverCache (they degrade to uncached sampling), so this
+			// catch is a last-resort guard for unexpected teardown failures only.
 			ctx.lookup.applyCell(cell, x, z, true, false);
 		} catch (IllegalStateException e) {
 			// Gracefully fallback to safe/approximate sampling if the underlying
-			// cache closed during a background transition or teleport race.
-			ctx.lookup.applyCell(cell, x, z, false, true);
+			// cache closed during a background transition or teleport race. (Cancellation
+			// of in-flight producers is covered too: CancellationException is an
+			// IllegalStateException.) The fallback itself is closure-safe: it never
+			// touches the tile cache, and RiverCache degrades to uncached generation.
+			ctx.lookup.applyCell(cell, x, z, false, false);
 		}
 
 		// Convert normalized height (0.0F - 1.0F) to world Y block coordinate

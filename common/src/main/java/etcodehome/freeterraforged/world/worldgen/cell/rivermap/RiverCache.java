@@ -16,9 +16,19 @@ public class RiverCache implements AutoCloseable {
     }
     
     public Rivermap getRivers(int x, int z) {
-        return this.cache.computeIfAbsent(PosUtil.pack(x, z), id -> {
+        Rivermap rivers = this.cache.computeIfAbsentIfOpen(PosUtil.pack(x, z), id -> {
         	return this.generator.generateRivers(PosUtil.unpackLeft(id), PosUtil.unpackRight(id), id);
         });
+        if (rivers != null) {
+            return rivers;
+        }
+        // The cache is closed (or raced with closure) during worldgen teardown: generate
+        // without caching rather than throwing "Cache is closed" into active samplers.
+        return this.generateUncached(x, z);
+    }
+
+    protected Rivermap generateUncached(int x, int z) {
+        return this.generator.generateRivers(x, z, PosUtil.pack(x, z));
     }
 
 	@Override
