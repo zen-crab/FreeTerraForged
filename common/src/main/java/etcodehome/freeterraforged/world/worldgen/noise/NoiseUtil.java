@@ -61,7 +61,12 @@ public class NoiseUtil {
     }
     
     public static int floor(float f) {
-        return (f >= 0.0F) ? ((int) f) : ((int) f - 1);
+        // Truncate-then-compare instead of a sign test: the previous
+        // (f >= 0.0F) ? (int) f : (int) f - 1 shortcut returned floor(f) - 1 for exact
+        // negative integers (e.g. floor(-1.0F) == -2), causing one-cell discontinuities
+        // in noise cell selection on exact negative boundaries.
+        int i = (int) f;
+        return f < (float) i ? i - 1 : i;
     }
     
     public static int toInt(float f) {
