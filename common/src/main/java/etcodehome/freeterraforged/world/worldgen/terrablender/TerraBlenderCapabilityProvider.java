@@ -151,7 +151,6 @@ public final class TerraBlenderCapabilityProvider implements WorldgenCapabilityP
 		}
 		Set<ResourceLocation> ids = new HashSet<>();
 		List<WorldgenPlans.ProviderDomain> providers = new ArrayList<>(regions.size());
-		Holder<Biome> deferred = biomes.getHolderOrThrow(Region.DEFERRED_PLACEHOLDER);
 		for (int order = 0; order < regions.size(); order++) {
 			context.checkCancelled();
 			Region region = regions.get(order);
@@ -159,16 +158,30 @@ public final class TerraBlenderCapabilityProvider implements WorldgenCapabilityP
 				throw new IllegalStateException("Duplicate TerraBlender provider ID: " + region.getName());
 			}
 			List<Pair<Climate.ParameterPoint, Holder<Biome>>> registeredEntries = new ArrayList<>();
-			region.addBiomes(biomes, entry -> registeredEntries.add(Pair.of(
-				entry.getFirst(), biomes.getHolderOrThrow(entry.getSecond())
-			)));
+			region.addBiomes(biomes, entry -> {
+				// Region.DEFERRED_PLACEHOLDER is a sentinel key, not a registrable biome: it is
+				// never present in the biome registry, so resolving it would always throw.
+				// TerraBlender itself drops entries whose biome key is unregistered (including
+				// this sentinel) when it builds its per-region parameter trees.
+				if (entry.getSecond().equals(Region.DEFERRED_PLACEHOLDER)) {
+					return;
+				}
+				biomes.getHolder(entry.getSecond())
+					.ifPresent(holder -> registeredEntries.add(Pair.of(entry.getFirst(), holder)));
+			});
 			List<Pair<Climate.ParameterPoint, Holder<Biome>>> entries = deduplicateEntries(registeredEntries);
 			if (entries.isEmpty()) {
-				throw new IllegalStateException("TerraBlender provider has no public candidates: " + region.getName());
+				// A region that only defers to vanilla (placeholder-only) contributes no
+				// candidates; skip it instead of failing the whole capability, mirroring
+				// TerraBlender's own handling of tree-less regions.
+				continue;
 			}
 			providers.add(new WorldgenPlans.ProviderDomain(
 				region.getName(), region.getWeight(), new Climate.ParameterList<>(entries), order
 			));
+		}
+		if (providers.isEmpty()) {
+			throw new IllegalStateException("TerraBlender exposes no Overworld provider with public candidates");
 		}
 		context.checkCancelled();
 		return new WorldgenPlans.ProviderSelection(
@@ -178,7 +191,11 @@ public final class TerraBlenderCapabilityProvider implements WorldgenCapabilityP
 			providers,
 			Optional.of(providers.getFirst().id()),
 			Optional.of(providers.getFirst().candidates()),
-			Optional.of(deferred)
+			// Resolve the sentinel leniently: it is unregistered in practice, so this stays
+			// empty and the deferred-fallback branch of ProviderSelection.resolveProvider is
+			// inert (placeholder candidates were filtered out above).
+			biomes.getHolder(Region.DEFERRED_PLACEHOLDER)
+				.map(holder -> (Holder<Biome>) holder)
 		);
 	}
 
